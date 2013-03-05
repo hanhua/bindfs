@@ -193,7 +193,7 @@ static int bindfs_release(const char *path, struct fuse_file_info *fi);
 static int bindfs_fsync(const char *path, int isdatasync,
                         struct fuse_file_info *fi);
 
-static int random_error(const char *operation);
+static int random_error(const char *operation, const char *path);
 
 static void print_usage(const char *progname);
 
@@ -210,9 +210,10 @@ static void signal_handler(int sig);
 
 static void atexit_func();
 
-static int random_error(const char *operation)
+static int random_error(const char *operation, const char *path)
 {
     int i;
+    (void) path;
 
     if (settings.rnderr_errno > 0 && lrand48() % settings.rnderr_errno == 0) {
         if (settings.rnderr_ops[0] == NULL)
@@ -390,7 +391,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 static int bindfs_fgetattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
-    int rnderr = random_error("fgetattr");
+    int rnderr = random_error("fgetattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -404,7 +405,7 @@ static int bindfs_fgetattr(const char *path, struct stat *stbuf,
 static int bindfs_readlink(const char *path, char *buf, size_t size)
 {
     int res;
-    int rnderr = random_error("readlink");
+    int rnderr = random_error("readlink", path);
     if (rnderr)
         return -rnderr;
 
@@ -425,7 +426,7 @@ static int bindfs_readlink(const char *path, char *buf, size_t size)
 static int bindfs_opendir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp;
-    int rnderr = random_error("opendir");
+    int rnderr = random_error("opendir", path);
     if (rnderr)
         return -rnderr;
 
@@ -454,7 +455,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     int result = 0;
     long pc_ret;
     
-    int rnderr = random_error("readdir");
+    int rnderr = random_error("readdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -492,7 +493,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int bindfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp = get_dirp(fi);
-    int rnderr = random_error("releasedir");
+    int rnderr = random_error("releasedir", path);
     if (rnderr)
         return -rnderr;
 
@@ -506,7 +507,7 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("mknod");
+    int rnderr = random_error("mknod", path);
     if (rnderr)
         return -rnderr;
 
@@ -532,7 +533,7 @@ static int bindfs_mkdir(const char *path, mode_t mode)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("mkdir");
+    int rnderr = random_error("mkdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -555,7 +556,7 @@ static int bindfs_unlink(const char *path)
 {
     int res;
 
-    int rnderr = random_error("unlink");
+    int rnderr = random_error("unlink", path);
     if (rnderr)
         return -rnderr;
 
@@ -572,7 +573,7 @@ static int bindfs_rmdir(const char *path)
 {
     int res;
 
-    int rnderr = random_error("rmdir");
+    int rnderr = random_error("rmdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -590,7 +591,7 @@ static int bindfs_symlink(const char *from, const char *to)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("symlink");
+    int rnderr = random_error("symlink", from);
     if (rnderr)
         return -rnderr;
 
@@ -610,7 +611,7 @@ static int bindfs_rename(const char *from, const char *to)
 {
     int res;
 
-    int rnderr = random_error("rename");
+    int rnderr = random_error("rename", from);
     if (rnderr)
         return -rnderr;
 
@@ -628,7 +629,7 @@ static int bindfs_link(const char *from, const char *to)
 {
     int res;
 
-    int rnderr = random_error("link");
+    int rnderr = random_error("link", from);
     if (rnderr)
         return -rnderr;
 
@@ -648,7 +649,7 @@ static int bindfs_chmod(const char *path, mode_t mode)
     struct stat st;
     mode_t diff = 0;
 
-    int rnderr = random_error("chmod");
+    int rnderr = random_error("chmod", path);
     if (rnderr)
         return -rnderr;
 
@@ -697,7 +698,7 @@ static int bindfs_chown(const char *path, uid_t uid, gid_t gid)
 {
     int res;
 
-    int rnderr = random_error("chown");
+    int rnderr = random_error("chown", path);
     if (rnderr)
         return -rnderr;
 
@@ -741,7 +742,7 @@ static int bindfs_truncate(const char *path, off_t size)
 {
     int res;
 
-    int rnderr = random_error("truncate");
+    int rnderr = random_error("truncate", path);
     if (rnderr)
         return -rnderr;
 
@@ -760,7 +761,7 @@ static int bindfs_ftruncate(const char *path, off_t size,
     int res;
     (void) path;
 
-    int rnderr = random_error("ftruncate");
+    int rnderr = random_error("ftruncate", path);
     if (rnderr)
         return -rnderr;
 
@@ -775,7 +776,7 @@ static int bindfs_utime(const char *path, struct utimbuf *buf)
 {
     int res;
 
-    int rnderr = random_error("utime");
+    int rnderr = random_error("utime", path);
     if (rnderr)
         return -rnderr;
 
@@ -793,7 +794,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
     int fd;
     struct fuse_context *fc;
 
-    int rnderr = random_error("create");
+    int rnderr = random_error("create", path);
     if (rnderr)
         return -rnderr;
 
@@ -817,7 +818,7 @@ static int bindfs_open(const char *path, struct fuse_file_info *fi)
 {
     int fd;
 
-    int rnderr = random_error("open");
+    int rnderr = random_error("open", path);
     if (rnderr)
         return -rnderr;
 
@@ -836,7 +837,7 @@ static int bindfs_read(const char *path, char *buf, size_t size, off_t offset,
 {
     int res;
     
-    int rnderr = random_error("read");
+    int rnderr = random_error("read", path);
     if (rnderr)
         return -rnderr;
 
@@ -853,7 +854,7 @@ static int bindfs_write(const char *path, const char *buf, size_t size,
 {
     int res;
 
-    int rnderr = random_error("write");
+    int rnderr = random_error("write", path);
     if (rnderr)
         return -rnderr;
 
@@ -870,7 +871,7 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 {
     int res;
 
-    int rnderr = random_error("statfs");
+    int rnderr = random_error("statfs", path);
     if (rnderr)
         return -rnderr;
 
@@ -885,7 +886,7 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 
 static int bindfs_release(const char *path, struct fuse_file_info *fi)
 {
-    int rnderr = random_error("release");
+    int rnderr = random_error("release", path);
     if (rnderr)
         return -rnderr;
 
@@ -901,7 +902,7 @@ static int bindfs_fsync(const char *path, int isdatasync,
 {
     int res;
 
-    int rnderr = random_error("fsync");
+    int rnderr = random_error("fsync", path);
     if (rnderr)
         return -rnderr;
 
@@ -927,7 +928,7 @@ static int bindfs_fsync(const char *path, int isdatasync,
 static int bindfs_setxattr(const char *path, const char *name, const char *value,
                            size_t size, int flags)
 {
-    int rnderr = random_error("setxattr");
+    int rnderr = random_error("setxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -952,7 +953,7 @@ static int bindfs_getxattr(const char *path, const char *name, char *value,
 {
     int res;
 
-    int rnderr = random_error("getxattr");
+    int rnderr = random_error("getxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -974,7 +975,7 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 {
     int res;
 
-    int rnderr = random_error("listxattr");
+    int rnderr = random_error("listxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -994,7 +995,7 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 
 static int bindfs_removexattr(const char *path, const char *name)
 {
-    int rnderr = random_error("removexattr");
+    int rnderr = random_error("removexattr", path);
     if (rnderr)
         return -rnderr;
 
