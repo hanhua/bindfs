@@ -253,7 +253,7 @@ static int random_error(const char *operation, const char *path)
     int i;
     (void) path;
 
-    if (settings.rnderr_errno > 0 && lrand48() % settings.rnderr_errno == 0) {
+    if (settings.rnderr_every > 0 && lrand48() % settings.rnderr_every == 0) {
         if (settings.rnderr_match[0] != NULL) {
             int match = 0;
             for (i=0; settings.rnderr_match[i] != NULL; i++) {
