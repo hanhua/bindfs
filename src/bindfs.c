@@ -59,6 +59,7 @@
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
 #endif
+#include <fnmatch.h>
 
 #include <fuse.h>
 #include <fuse_opt.h>
@@ -70,6 +71,7 @@
 #include "misc.h"
 
 #define RNDERR_MAX_NUM_OPS 32
+#define RNDERR_MAX_NUM_MATCH 64
 
 /* SETTINGS */
 static struct Settings {
@@ -137,6 +139,7 @@ static struct Settings {
     int rnderr_every;
     int rnderr_errno;
     const char *rnderr_ops[RNDERR_MAX_NUM_OPS];
+    const char *rnderr_match[RNDERR_MAX_NUM_MATCH];
 } settings;
 
 
@@ -193,8 +196,6 @@ static int bindfs_release(const char *path, struct fuse_file_info *fi);
 static int bindfs_fsync(const char *path, int isdatasync,
                         struct fuse_file_info *fi);
 
-static int random_error(const char *operation, const char *path);
-
 static void print_usage(const char *progname);
 
 static int process_option(void *data, const char *arg, int key,
@@ -210,12 +211,60 @@ static void signal_handler(int sig);
 
 static void atexit_func();
 
+/* Random error generator */
+static void split_string(const char **array, int max_num, char *str,
+                         const char *opt);
+static int path_match(const char *path, const char *pattern);
+static int random_error(const char *operation, const char *path);
+
+static void split_string(const char **array, int max_num, char *str,
+                         const char *opt)
+{
+    int index = 0;
+    char *p;
+
+    for (p=strtok(str, ","); p != NULL; p=strtok(NULL, ",")) {
+        array[index++] = p;
+        if (index >= max_num-1) {
+            fprintf(stderr, "Too many entries for option %s.\n", opt);
+            exit(1);
+        }
+        array[index] = NULL;
+    }
+}
+
+static int path_match(const char *path, const char *pattern)
+{
+    const char *p;
+    if (path[0] != '/')
+        return 0;
+    if (pattern[0] == '/')
+        return fnmatch(pattern, path, FNM_PATHNAME|FNM_PERIOD) == 0;
+
+    for (p=path+1; p != NULL && p[0] != '\0'; p=strchr(p+1, '/')) {
+        if (fnmatch(pattern, p+1, FNM_PATHNAME|FNM_PERIOD) == 0)
+            return 0;
+    }
+    return 1;
+}
+
 static int random_error(const char *operation, const char *path)
 {
     int i;
     (void) path;
 
     if (settings.rnderr_errno > 0 && lrand48() % settings.rnderr_errno == 0) {
+        if (settings.rnderr_match[0] != NULL) {
+            int match = 0;
+            for (i=0; settings.rnderr_match[i] != NULL; i++) {
+                if (path_match(path, settings.rnderr_match[i])) {
+                    match = 1;
+                    break;
+                }
+            }
+            if (!match)
+                return 0;
+        }
         if (settings.rnderr_ops[0] == NULL)
             return settings.rnderr_errno;
         for (i=0; settings.rnderr_ops[i] != NULL; i++) {
@@ -1482,6 +1531,7 @@ int main(int argc, char *argv[])
         int rnderr_every;
         int rnderr_errno;
         char *rnderr_ops;
+        char *rnderr_match;
     } od;
 
     #define OPT2(one, two, key) \
@@ -1541,6 +1591,7 @@ int main(int argc, char *argv[])
         OPT_OFFSET2("--rnderr-every %i", "rnderr-every=%i", rnderr_every, -1),
         OPT_OFFSET2("--rnderr-ops %s", "rnderr-ops=%s", rnderr_ops, -1),
         OPT_OFFSET2("--rnderr-errno %i", "rnderr_errno=%i", rnderr_errno, -1),
+        OPT_OFFSET2("--rnderr-match %s", "rnderr_match=%s", rnderr_match, -1),
         FUSE_OPT_END
     };
 
@@ -1579,6 +1630,7 @@ int main(int argc, char *argv[])
     settings.rnderr_every = 0;
     settings.rnderr_ops[0] = NULL;
     settings.rnderr_errno = EPERM;
+    settings.rnderr_match[0] = NULL;
 
     atexit(&atexit_func);
     
@@ -1702,17 +1754,12 @@ int main(int argc, char *argv[])
     if (od.rnderr_errno)
         settings.rnderr_errno = od.rnderr_errno;
     if (od.rnderr_ops) {
-        int index = 0;
-        char *p;
-
-        for (p=strtok(od.rnderr_ops, ","); p != NULL; p=strtok(NULL, ",")) {
-            settings.rnderr_ops[index++] = p;
-            if (index >= RNDERR_MAX_NUM_OPS-1) {
-                fprintf(stderr, "Too many entries in --rnderr-ops\n");
-                return 1;
-            }
-        }
-        settings.rnderr_ops[index] = NULL;
+        split_string(settings.rnderr_ops, RNDERR_MAX_NUM_OPS,
+                     od.rnderr_ops, "rnderr_ops");
+    }
+    if (od.rnderr_match) {
+        split_string(settings.rnderr_match, RNDERR_MAX_NUM_MATCH,
+                     od.rnderr_match, "rnderr_match");
     }
 
     /* We want the kernel to do our access checks for us based on what getattr gives it. */
