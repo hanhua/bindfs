@@ -69,6 +69,8 @@
 #include "usermap.h"
 #include "misc.h"
 
+#define RNDERR_MAX_NUM_OPS 32
+
 /* SETTINGS */
 static struct Settings {
     const char *progname;
@@ -131,6 +133,10 @@ static struct Settings {
     int ctime_from_mtime;
     int hide_hard_links;
     
+    /* Settings for random error generator */
+    int rnderr_every;
+    int rnderr_errno;
+    const char *rnderr_ops[RNDERR_MAX_NUM_OPS];
 } settings;
 
 
@@ -187,6 +193,7 @@ static int bindfs_release(const char *path, struct fuse_file_info *fi);
 static int bindfs_fsync(const char *path, int isdatasync,
                         struct fuse_file_info *fi);
 
+static int random_error(const char *operation);
 
 static void print_usage(const char *progname);
 
@@ -202,6 +209,21 @@ static void setup_signal_handling();
 static void signal_handler(int sig);
 
 static void atexit_func();
+
+static int random_error(const char *operation)
+{
+    int i;
+
+    if (settings.rnderr_errno > 0 && lrand48() % settings.rnderr_errno == 0) {
+        if (settings.rnderr_ops[0] == NULL)
+            return settings.rnderr_errno;
+        for (i=0; settings.rnderr_ops[i] != NULL; i++) {
+            if (0 == strcmp(operation, settings.rnderr_ops[i]))
+                return settings.rnderr_errno;
+        }
+    }
+    return 0;
+}
 
 static int is_mirroring_enabled()
 {
@@ -368,6 +390,10 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 static int bindfs_fgetattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
+    int rnderr = random_error("fgetattr");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     if (fstat(fi->fh, stbuf) == -1)
@@ -378,6 +404,9 @@ static int bindfs_fgetattr(const char *path, struct stat *stbuf,
 static int bindfs_readlink(const char *path, char *buf, size_t size)
 {
     int res;
+    int rnderr = random_error("readlink");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -396,6 +425,9 @@ static int bindfs_readlink(const char *path, char *buf, size_t size)
 static int bindfs_opendir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp;
+    int rnderr = random_error("opendir");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -422,6 +454,10 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     int result = 0;
     long pc_ret;
     
+    int rnderr = random_error("readdir");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
     
     pc_ret = pathconf(path, _PC_NAME_MAX);
@@ -456,6 +492,10 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int bindfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp = get_dirp(fi);
+    int rnderr = random_error("releasedir");
+    if (rnderr)
+        return -rnderr;
+
     (void) path;
     closedir(dp);
     return 0;
@@ -465,6 +505,10 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     int res;
     struct fuse_context *fc;
+
+    int rnderr = random_error("mknod");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -488,6 +532,10 @@ static int bindfs_mkdir(const char *path, mode_t mode)
     int res;
     struct fuse_context *fc;
 
+    int rnderr = random_error("mkdir");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     mode |= S_IFDIR; /* tell permchain_apply this is a directory */
@@ -507,6 +555,10 @@ static int bindfs_unlink(const char *path)
 {
     int res;
 
+    int rnderr = random_error("unlink");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     res = unlink(path);
@@ -519,6 +571,10 @@ static int bindfs_unlink(const char *path)
 static int bindfs_rmdir(const char *path)
 {
     int res;
+
+    int rnderr = random_error("rmdir");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -533,6 +589,10 @@ static int bindfs_symlink(const char *from, const char *to)
 {
     int res;
     struct fuse_context *fc;
+
+    int rnderr = random_error("symlink");
+    if (rnderr)
+        return -rnderr;
 
     to = process_path(to);
 
@@ -550,6 +610,10 @@ static int bindfs_rename(const char *from, const char *to)
 {
     int res;
 
+    int rnderr = random_error("rename");
+    if (rnderr)
+        return -rnderr;
+
     from = process_path(from);
     to = process_path(to);
 
@@ -563,6 +627,10 @@ static int bindfs_rename(const char *from, const char *to)
 static int bindfs_link(const char *from, const char *to)
 {
     int res;
+
+    int rnderr = random_error("link");
+    if (rnderr)
+        return -rnderr;
 
     from = process_path(from);
     to = process_path(to);
@@ -579,6 +647,10 @@ static int bindfs_chmod(const char *path, mode_t mode)
     int file_execute_only = 0;
     struct stat st;
     mode_t diff = 0;
+
+    int rnderr = random_error("chmod");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -625,6 +697,10 @@ static int bindfs_chown(const char *path, uid_t uid, gid_t gid)
 {
     int res;
 
+    int rnderr = random_error("chown");
+    if (rnderr)
+        return -rnderr;
+
     if (uid != -1) {
         switch (settings.chown_policy) {
         case CHOWN_NORMAL:
@@ -665,6 +741,10 @@ static int bindfs_truncate(const char *path, off_t size)
 {
     int res;
 
+    int rnderr = random_error("truncate");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     res = truncate(path, size);
@@ -680,6 +760,10 @@ static int bindfs_ftruncate(const char *path, off_t size,
     int res;
     (void) path;
 
+    int rnderr = random_error("ftruncate");
+    if (rnderr)
+        return -rnderr;
+
     res = ftruncate(fi->fh, size);
     if (res == -1)
         return -errno;
@@ -690,6 +774,10 @@ static int bindfs_ftruncate(const char *path, off_t size,
 static int bindfs_utime(const char *path, struct utimbuf *buf)
 {
     int res;
+
+    int rnderr = random_error("utime");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -704,6 +792,10 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
 {
     int fd;
     struct fuse_context *fc;
+
+    int rnderr = random_error("create");
+    if (rnderr)
+        return -rnderr;
 
     path = process_path(path);
 
@@ -725,6 +817,10 @@ static int bindfs_open(const char *path, struct fuse_file_info *fi)
 {
     int fd;
 
+    int rnderr = random_error("open");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     fd = open(path, fi->flags);
@@ -739,8 +835,12 @@ static int bindfs_read(const char *path, char *buf, size_t size, off_t offset,
                        struct fuse_file_info *fi)
 {
     int res;
-    (void) path;
     
+    int rnderr = random_error("read");
+    if (rnderr)
+        return -rnderr;
+
+    (void) path;
     res = pread(fi->fh, buf, size, offset);
     if (res == -1)
         res = -errno;
@@ -752,6 +852,11 @@ static int bindfs_write(const char *path, const char *buf, size_t size,
                         off_t offset, struct fuse_file_info *fi)
 {
     int res;
+
+    int rnderr = random_error("write");
+    if (rnderr)
+        return -rnderr;
+
     (void) path;
 
     res = pwrite(fi->fh, buf, size, offset);
@@ -765,6 +870,10 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 {
     int res;
 
+    int rnderr = random_error("statfs");
+    if (rnderr)
+        return -rnderr;
+
     path = process_path(path);
 
     res = statvfs(path, stbuf);
@@ -776,6 +885,10 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 
 static int bindfs_release(const char *path, struct fuse_file_info *fi)
 {
+    int rnderr = random_error("release");
+    if (rnderr)
+        return -rnderr;
+
     (void) path;
     
     close(fi->fh);
@@ -787,6 +900,11 @@ static int bindfs_fsync(const char *path, int isdatasync,
                         struct fuse_file_info *fi)
 {
     int res;
+
+    int rnderr = random_error("fsync");
+    if (rnderr)
+        return -rnderr;
+
     (void) path;
 
 #ifndef HAVE_FDATASYNC
@@ -809,6 +927,10 @@ static int bindfs_fsync(const char *path, int isdatasync,
 static int bindfs_setxattr(const char *path, const char *name, const char *value,
                            size_t size, int flags)
 {
+    int rnderr = random_error("setxattr");
+    if (rnderr)
+        return -rnderr;
+
     DPRINTF("setxattr %s %s=%s", path, name, value);
     
     if (settings.xattr_policy == XATTR_READ_ONLY)
@@ -830,6 +952,10 @@ static int bindfs_getxattr(const char *path, const char *name, char *value,
 {
     int res;
 
+    int rnderr = random_error("getxattr");
+    if (rnderr)
+        return -rnderr;
+
     DPRINTF("getxattr %s %s", path, name);
     
     path = process_path(path);
@@ -848,6 +974,10 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 {
     int res;
 
+    int rnderr = random_error("listxattr");
+    if (rnderr)
+        return -rnderr;
+
     DPRINTF("listxattr %s", path);
     
     path = process_path(path);
@@ -864,6 +994,10 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 
 static int bindfs_removexattr(const char *path, const char *name)
 {
+    int rnderr = random_error("removexattr");
+    if (rnderr)
+        return -rnderr;
+
     DPRINTF("removexattr %s %s", path, name);
 
     if (settings.xattr_policy == XATTR_READ_ONLY)
@@ -979,6 +1113,11 @@ static void print_usage(const char *progname)
            "  --hide-hard-links         Always report a hard link count of 1.\n"
            "  --multithreaded           Enable multithreaded mode. See man page\n"
            "                            for security issue with current implementation.\n"
+           "  --rnderr-every N          Generate random errors for every N operations.\n"
+           "                            (Default: N=0; do not generate errors)\n"
+           "  --rnderr-errno E          Error number to generate (default: 1=EPERM)\n"
+           "  --rnderr-ops str[,str...] Operations that may have random errors\n"
+           "                            (Example: opendir,read,write) (default: all)\n"
            "\n"
            "FUSE options:\n"
            "  -o opt[,opt,...]          Mount options.\n"
@@ -1338,6 +1477,10 @@ int main(int argc, char *argv[])
         char *create_with_perms;
         int no_allow_other;
         int multithreaded;
+
+        int rnderr_every;
+        int rnderr_errno;
+        char *rnderr_ops;
     } od;
 
     #define OPT2(one, two, key) \
@@ -1393,6 +1536,10 @@ int main(int argc, char *argv[])
         OPT2("--ctime-from-mtime", "ctime-from-mtime", OPTKEY_CTIME_FROM_MTIME),
         OPT2("--hide-hard-links", "hide-hard-links", OPTKEY_HIDE_HARD_LINKS),
         OPT_OFFSET2("--multithreaded", "multithreaded", multithreaded, -1),
+
+        OPT_OFFSET2("--rnderr-every %i", "rnderr-every=%i", rnderr_every, -1),
+        OPT_OFFSET2("--rnderr-ops %s", "rnderr-ops=%s", rnderr_ops, -1),
+        OPT_OFFSET2("--rnderr-errno %i", "rnderr_errno=%i", rnderr_errno, -1),
         FUSE_OPT_END
     };
 
@@ -1427,6 +1574,11 @@ int main(int argc, char *argv[])
     settings.realistic_permissions = 0;
     settings.ctime_from_mtime = 0;
     settings.hide_hard_links = 0;
+
+    settings.rnderr_every = 0;
+    settings.rnderr_ops[0] = NULL;
+    settings.rnderr_errno = EPERM;
+
     atexit(&atexit_func);
     
     /* Parse options */
@@ -1541,6 +1693,25 @@ int main(int argc, char *argv[])
     /* Add default fuse options */
     if (!od.no_allow_other) {
         fuse_opt_add_arg(&args, "-oallow_other");
+    }
+
+    /* Random error generation */
+    if (od.rnderr_every)
+        settings.rnderr_every = od.rnderr_every;
+    if (od.rnderr_errno)
+        settings.rnderr_errno = od.rnderr_errno;
+    if (od.rnderr_ops) {
+        int index = 0;
+        char *p;
+
+        for (p=strtok(od.rnderr_ops, ","); p != NULL; p=strtok(NULL, ",")) {
+            settings.rnderr_ops[index++] = p;
+            if (index >= RNDERR_MAX_NUM_OPS-1) {
+                fprintf(stderr, "Too many entries in --rnderr-ops\n");
+                return 1;
+            }
+        }
+        settings.rnderr_ops[index] = NULL;
     }
 
     /* We want the kernel to do our access checks for us based on what getattr gives it. */
