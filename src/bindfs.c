@@ -236,16 +236,15 @@ static void split_string(const char **array, int max_num, char *str,
 static int path_match(const char *path, const char *pattern)
 {
     const char *p;
-    if (path[0] != '/')
-        return 0;
     if (pattern[0] == '/')
         return fnmatch(pattern, path, FNM_PATHNAME|FNM_PERIOD) == 0;
 
-    for (p=path+1; p != NULL && p[0] != '\0'; p=strchr(p+1, '/')) {
+    for (p=path; p != NULL && p[1] != '\0'; p=strchr(p+1, '/')) {
+        assert(p[0] == '/');
         if (fnmatch(pattern, p+1, FNM_PATHNAME|FNM_PERIOD) == 0)
-            return 0;
+            return 1;
     }
-    return 1;
+    return 0;
 }
 
 static int random_error(const char *operation, const char *path)
@@ -1588,10 +1587,10 @@ int main(int argc, char *argv[])
         OPT2("--hide-hard-links", "hide-hard-links", OPTKEY_HIDE_HARD_LINKS),
         OPT_OFFSET2("--multithreaded", "multithreaded", multithreaded, -1),
 
-        OPT_OFFSET2("--rnderr-every %i", "rnderr-every=%i", rnderr_every, -1),
-        OPT_OFFSET2("--rnderr-ops %s", "rnderr-ops=%s", rnderr_ops, -1),
-        OPT_OFFSET2("--rnderr-errno %i", "rnderr_errno=%i", rnderr_errno, -1),
-        OPT_OFFSET2("--rnderr-match %s", "rnderr_match=%s", rnderr_match, -1),
+        OPT_OFFSET2("--rnderr-every=%i", "rnderr-every=%i", rnderr_every, -1),
+        OPT_OFFSET2("--rnderr-ops=%s", "rnderr-ops=%s", rnderr_ops, -1),
+        OPT_OFFSET2("--rnderr-errno=%i", "rnderr-errno=%i", rnderr_errno, -1),
+        OPT_OFFSET2("--rnderr-match=%s", "rnderr-match=%s", rnderr_match, -1),
         FUSE_OPT_END
     };
 
