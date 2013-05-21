@@ -134,12 +134,14 @@ static struct Settings {
 
     int ctime_from_mtime;
     int hide_hard_links;
-    
+   
     /* Settings for random error generator */
-    int rnderr_every;
-    int rnderr_errno;
-    const char *rnderr_ops[RNDERR_MAX_NUM_OPS];
-    const char *rnderr_match[RNDERR_MAX_NUM_MATCH];
+    int random_error_every;
+    int random_error;
+    int random_delay_every;
+    unsigned int random_delay;
+    const char *intercept_ops[RNDERR_MAX_NUM_OPS];
+    const char *intercept_match[RNDERR_MAX_NUM_MATCH];
 } settings;
 
 
@@ -215,7 +217,7 @@ static void atexit_func();
 static void split_string(const char **array, int max_num, char *str,
                          const char *opt);
 static int path_match(const char *path, const char *pattern);
-static int random_error(const char *operation, const char *path);
+static int intercept(const char *operation, const char *path);
 
 static void split_string(const char **array, int max_num, char *str,
                          const char *opt)
@@ -247,28 +249,41 @@ static int path_match(const char *path, const char *pattern)
     return 0;
 }
 
-static int random_error(const char *operation, const char *path)
+static int intercept(const char *operation, const char *path)
 {
     int i;
-    (void) path;
+    if (settings.random_delay == 0 && settings.random_error == 0)
+        return 0;
 
-    if (settings.rnderr_every > 0 && lrand48() % settings.rnderr_every == 0) {
-        if (settings.rnderr_match[0] != NULL) {
-            int match = 0;
-            for (i=0; settings.rnderr_match[i] != NULL; i++) {
-                if (path_match(path, settings.rnderr_match[i])) {
-                    match = 1;
-                    break;
-                }
-            }
-            if (!match)
-                return 0;
+    if (settings.intercept_match[0] != NULL) {
+        for (i=0; settings.intercept_match[i] != NULL; i++) {
+            if (path_match(path, settings.intercept_match[i]))
+                break;
         }
-        if (settings.rnderr_ops[0] == NULL)
-            return settings.rnderr_errno;
-        for (i=0; settings.rnderr_ops[i] != NULL; i++) {
-            if (0 == strcmp(operation, settings.rnderr_ops[i]))
-                return settings.rnderr_errno;
+        if (settings.intercept_match[i] == NULL)
+            return 0;
+    }
+
+    if (settings.intercept_ops[0] != NULL) {
+        for (i=0; settings.intercept_ops[i] != NULL; i++) {
+            if (0 == strcmp(operation, settings.intercept_ops[i]))
+                break;
+        }
+        if (settings.intercept_ops[i] == NULL)
+            return 0;
+    }
+
+    if (settings.random_delay > 0) {
+        if (settings.random_delay_every <= 0
+            || lrand48() % settings.random_delay_every == 0 ) {
+            usleep(lrand48() % (settings.random_delay + settings.random_delay + 1));
+        }
+    }
+
+    if (settings.random_error > 0) {
+        if (settings.random_error_every <= 0
+            || lrand48() % settings.random_error_every == 0) {
+            return settings.random_error;
         }
     }
     return 0;
@@ -439,7 +454,7 @@ static int bindfs_getattr(const char *path, struct stat *stbuf)
 static int bindfs_fgetattr(const char *path, struct stat *stbuf,
                            struct fuse_file_info *fi)
 {
-    int rnderr = random_error("fgetattr", path);
+    int rnderr = intercept("fgetattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -453,7 +468,7 @@ static int bindfs_fgetattr(const char *path, struct stat *stbuf,
 static int bindfs_readlink(const char *path, char *buf, size_t size)
 {
     int res;
-    int rnderr = random_error("readlink", path);
+    int rnderr = intercept("readlink", path);
     if (rnderr)
         return -rnderr;
 
@@ -474,7 +489,7 @@ static int bindfs_readlink(const char *path, char *buf, size_t size)
 static int bindfs_opendir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp;
-    int rnderr = random_error("opendir", path);
+    int rnderr = intercept("opendir", path);
     if (rnderr)
         return -rnderr;
 
@@ -503,7 +518,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     int result = 0;
     long pc_ret;
     
-    int rnderr = random_error("readdir", path);
+    int rnderr = intercept("readdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -541,7 +556,7 @@ static int bindfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 static int bindfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
     DIR *dp = get_dirp(fi);
-    int rnderr = random_error("releasedir", path);
+    int rnderr = intercept("releasedir", path);
     if (rnderr)
         return -rnderr;
 
@@ -555,7 +570,7 @@ static int bindfs_mknod(const char *path, mode_t mode, dev_t rdev)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("mknod", path);
+    int rnderr = intercept("mknod", path);
     if (rnderr)
         return -rnderr;
 
@@ -581,7 +596,7 @@ static int bindfs_mkdir(const char *path, mode_t mode)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("mkdir", path);
+    int rnderr = intercept("mkdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -604,7 +619,7 @@ static int bindfs_unlink(const char *path)
 {
     int res;
 
-    int rnderr = random_error("unlink", path);
+    int rnderr = intercept("unlink", path);
     if (rnderr)
         return -rnderr;
 
@@ -621,7 +636,7 @@ static int bindfs_rmdir(const char *path)
 {
     int res;
 
-    int rnderr = random_error("rmdir", path);
+    int rnderr = intercept("rmdir", path);
     if (rnderr)
         return -rnderr;
 
@@ -639,7 +654,7 @@ static int bindfs_symlink(const char *from, const char *to)
     int res;
     struct fuse_context *fc;
 
-    int rnderr = random_error("symlink", from);
+    int rnderr = intercept("symlink", from);
     if (rnderr)
         return -rnderr;
 
@@ -659,7 +674,7 @@ static int bindfs_rename(const char *from, const char *to)
 {
     int res;
 
-    int rnderr = random_error("rename", from);
+    int rnderr = intercept("rename", from);
     if (rnderr)
         return -rnderr;
 
@@ -677,7 +692,7 @@ static int bindfs_link(const char *from, const char *to)
 {
     int res;
 
-    int rnderr = random_error("link", from);
+    int rnderr = intercept("link", from);
     if (rnderr)
         return -rnderr;
 
@@ -697,7 +712,7 @@ static int bindfs_chmod(const char *path, mode_t mode)
     struct stat st;
     mode_t diff = 0;
 
-    int rnderr = random_error("chmod", path);
+    int rnderr = intercept("chmod", path);
     if (rnderr)
         return -rnderr;
 
@@ -746,7 +761,7 @@ static int bindfs_chown(const char *path, uid_t uid, gid_t gid)
 {
     int res;
 
-    int rnderr = random_error("chown", path);
+    int rnderr = intercept("chown", path);
     if (rnderr)
         return -rnderr;
 
@@ -790,7 +805,7 @@ static int bindfs_truncate(const char *path, off_t size)
 {
     int res;
 
-    int rnderr = random_error("truncate", path);
+    int rnderr = intercept("truncate", path);
     if (rnderr)
         return -rnderr;
 
@@ -809,7 +824,7 @@ static int bindfs_ftruncate(const char *path, off_t size,
     int res;
     (void) path;
 
-    int rnderr = random_error("ftruncate", path);
+    int rnderr = intercept("ftruncate", path);
     if (rnderr)
         return -rnderr;
 
@@ -824,7 +839,7 @@ static int bindfs_utime(const char *path, struct utimbuf *buf)
 {
     int res;
 
-    int rnderr = random_error("utime", path);
+    int rnderr = intercept("utime", path);
     if (rnderr)
         return -rnderr;
 
@@ -842,7 +857,7 @@ static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *f
     int fd;
     struct fuse_context *fc;
 
-    int rnderr = random_error("create", path);
+    int rnderr = intercept("create", path);
     if (rnderr)
         return -rnderr;
 
@@ -866,7 +881,7 @@ static int bindfs_open(const char *path, struct fuse_file_info *fi)
 {
     int fd;
 
-    int rnderr = random_error("open", path);
+    int rnderr = intercept("open", path);
     if (rnderr)
         return -rnderr;
 
@@ -885,7 +900,7 @@ static int bindfs_read(const char *path, char *buf, size_t size, off_t offset,
 {
     int res;
     
-    int rnderr = random_error("read", path);
+    int rnderr = intercept("read", path);
     if (rnderr)
         return -rnderr;
 
@@ -902,7 +917,7 @@ static int bindfs_write(const char *path, const char *buf, size_t size,
 {
     int res;
 
-    int rnderr = random_error("write", path);
+    int rnderr = intercept("write", path);
     if (rnderr)
         return -rnderr;
 
@@ -919,7 +934,7 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 {
     int res;
 
-    int rnderr = random_error("statfs", path);
+    int rnderr = intercept("statfs", path);
     if (rnderr)
         return -rnderr;
 
@@ -934,7 +949,7 @@ static int bindfs_statfs(const char *path, struct statvfs *stbuf)
 
 static int bindfs_release(const char *path, struct fuse_file_info *fi)
 {
-    int rnderr = random_error("release", path);
+    int rnderr = intercept("release", path);
     if (rnderr)
         return -rnderr;
 
@@ -950,7 +965,7 @@ static int bindfs_fsync(const char *path, int isdatasync,
 {
     int res;
 
-    int rnderr = random_error("fsync", path);
+    int rnderr = intercept("fsync", path);
     if (rnderr)
         return -rnderr;
 
@@ -976,7 +991,7 @@ static int bindfs_fsync(const char *path, int isdatasync,
 static int bindfs_setxattr(const char *path, const char *name, const char *value,
                            size_t size, int flags)
 {
-    int rnderr = random_error("setxattr", path);
+    int rnderr = intercept("setxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -1001,7 +1016,7 @@ static int bindfs_getxattr(const char *path, const char *name, char *value,
 {
     int res;
 
-    int rnderr = random_error("getxattr", path);
+    int rnderr = intercept("getxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -1023,7 +1038,7 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 {
     int res;
 
-    int rnderr = random_error("listxattr", path);
+    int rnderr = intercept("listxattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -1043,7 +1058,7 @@ static int bindfs_listxattr(const char *path, char *list, size_t size)
 
 static int bindfs_removexattr(const char *path, const char *name)
 {
-    int rnderr = random_error("removexattr", path);
+    int rnderr = intercept("removexattr", path);
     if (rnderr)
         return -rnderr;
 
@@ -1162,11 +1177,15 @@ static void print_usage(const char *progname)
            "  --hide-hard-links         Always report a hard link count of 1.\n"
            "  --multithreaded           Enable multithreaded mode. See man page\n"
            "                            for security issue with current implementation.\n"
-           "  --rnderr-every N          Generate random errors for every N operations.\n"
-           "                            (Default: N=0; do not generate errors)\n"
-           "  --rnderr-errno E          Error number to generate (default: 1=EPERM)\n"
-           "  --rnderr-ops str[,str...] Operations that may have random errors\n"
+           "  --intercept-ops str[,str...] Operations that may have random errors\n"
            "                            (Example: opendir,read,write) (default: all)\n"
+           "  --intercept-match path[,path...] Paths that may have random errors\n"
+           "  --random-error E          Error number to generate (default: 0, no random errors)\n"
+           "  --random-error-every N    Generate random errors for every N operations.\n"
+           "                            (Default: N=0; generate errors every time)\n"
+           "  --random-delay T          Random delay (in microseconds) (default: 0, no delay)\n"
+           "  --random-delay-every N    Generate random delays for every N operations.\n"
+           "                            (Default: N=0; generate errors every time)\n"
            "\n"
            "FUSE options:\n"
            "  -o opt[,opt,...]          Mount options.\n"
@@ -1527,10 +1546,12 @@ int main(int argc, char *argv[])
         int no_allow_other;
         int multithreaded;
 
-        int rnderr_every;
-        int rnderr_errno;
-        char *rnderr_ops;
-        char *rnderr_match;
+        int random_error_every;
+        int random_error;
+        int random_delay_every;
+        int random_delay;
+        char *intercept_ops;
+        char *intercept_match;
     } od;
 
     #define OPT2(one, two, key) \
@@ -1587,10 +1608,12 @@ int main(int argc, char *argv[])
         OPT2("--hide-hard-links", "hide-hard-links", OPTKEY_HIDE_HARD_LINKS),
         OPT_OFFSET2("--multithreaded", "multithreaded", multithreaded, -1),
 
-        OPT_OFFSET2("--rnderr-every=%i", "rnderr-every=%i", rnderr_every, -1),
-        OPT_OFFSET2("--rnderr-ops=%s", "rnderr-ops=%s", rnderr_ops, -1),
-        OPT_OFFSET2("--rnderr-errno=%i", "rnderr-errno=%i", rnderr_errno, -1),
-        OPT_OFFSET2("--rnderr-match=%s", "rnderr-match=%s", rnderr_match, -1),
+        OPT_OFFSET2("--intercept-match=%s", "intercept-match=%s", intercept_match, -1),
+        OPT_OFFSET2("--intercept-ops=%s", "intercept-ops=%s", intercept_ops, -1),
+        OPT_OFFSET2("--random-error-every=%i", "random-error-every=%i", random_error_every, -1),
+        OPT_OFFSET2("--random-error=%i", "random-error=%i", random_error, -1),
+        OPT_OFFSET2("--random-delay-every=%i", "random-delay-every=%i", random_delay_every, -1),
+        OPT_OFFSET2("--random-delay=%i", "random-delay=%i", random_delay, -1),
         FUSE_OPT_END
     };
 
@@ -1626,10 +1649,12 @@ int main(int argc, char *argv[])
     settings.ctime_from_mtime = 0;
     settings.hide_hard_links = 0;
 
-    settings.rnderr_every = 0;
-    settings.rnderr_ops[0] = NULL;
-    settings.rnderr_errno = EPERM;
-    settings.rnderr_match[0] = NULL;
+    settings.intercept_ops[0] = NULL;
+    settings.intercept_match[0] = NULL;
+    settings.random_error_every = 0;
+    settings.random_error = 0;
+    settings.random_delay_every = 0;
+    settings.random_delay = 0;
 
     atexit(&atexit_func);
     
@@ -1748,18 +1773,22 @@ int main(int argc, char *argv[])
     }
 
     /* Random error generation */
-    if (od.rnderr_every)
-        settings.rnderr_every = od.rnderr_every;
-    if (od.rnderr_errno)
-        settings.rnderr_errno = od.rnderr_errno;
-    if (od.rnderr_ops) {
-        split_string(settings.rnderr_ops, RNDERR_MAX_NUM_OPS,
-                     od.rnderr_ops, "rnderr_ops");
+    if (od.intercept_ops) {
+        split_string(settings.intercept_ops, RNDERR_MAX_NUM_OPS,
+                     od.intercept_ops, "intercept-ops");
     }
-    if (od.rnderr_match) {
-        split_string(settings.rnderr_match, RNDERR_MAX_NUM_MATCH,
-                     od.rnderr_match, "rnderr_match");
+    if (od.intercept_match) {
+        split_string(settings.intercept_match, RNDERR_MAX_NUM_MATCH,
+                     od.intercept_match, "intercept-match");
     }
+    if (od.random_error_every)
+        settings.random_error_every = od.random_error_every;
+    if (od.random_error)
+        settings.random_error = od.random_error;
+    if (od.random_delay_every)
+        settings.random_delay_every = od.random_delay_every;
+    if (od.random_delay)
+        settings.random_delay = (unsigned int)od.random_delay;
 
     /* We want the kernel to do our access checks for us based on what getattr gives it. */
     fuse_opt_add_arg(&args, "-odefault_permissions");
