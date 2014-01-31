@@ -168,6 +168,12 @@ but actually does nothing.
 Makes chmod always fail with a 'permission denied' error.
 
 .TP
+.B \-\-chmod\-filter=\fIpermissions\fP,, \-o chmod\-filter=...
+Changes the permission bits of a chmod request before it is applied to the
+original file. Accepts the same permission syntax as \-\-perms.
+See \fB\%PERMISSION \%SPECIFICATION\fP below for details.
+
+.TP
 .B \-\-chmod\-allow\-x, \-o chmod\-allow\-x
 Allows setting and clearing the executable attribute on files
 (but not directories). When used with \-\-chmod\-ignore,
@@ -364,10 +370,8 @@ This may constitute a security risk if you rely on bindfs to reduce
 permissions on new files. For this reason, as of version 1.11
 bindfs runs in single-threaded mode by default.
 
-Please report bugs to the issue tracker on the project home page at
-\fBhttp://code.google.com/p/bindfs/\fP
-Send patches as pull requests to \fBhttps://github.com/mpartel/bindfs\fP or
-by e-mail to \fBmartin dot partel at gmail dot com\fP.
+Please report bugs and/or send pull requests to
+\fBhttps://github.com/mpartel/bindfs/issues\fP.
 
 
 .SH DEPRECATIONS
@@ -386,5 +390,5 @@ Martin P\[:a]rtel <martin dot partel at gmail dot com>
 
 
 .SH SEE ALSO
-\fBchmod\fP(1), \fBfusermount\fP(1)
+\fBchmod\fP(1), \fBfusermount\fP(1), \fBhttp://bindfs.org/\fP
 

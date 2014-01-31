@@ -31,8 +31,8 @@
 
 #include <config.h>
 
-/* For pread/pwrite and readdir_r */
-#define _XOPEN_SOURCE 500
+/* For >= 500 for pread/pwrite and readdir_r; >= 700 for utimensat */
+#define _XOPEN_SOURCE 700
 
 #include <stdlib.h>
 #include <stddef.h>
@@ -118,6 +118,8 @@ static struct Settings {
     
     int chmod_allow_x;
 
+    struct permchain *chmod_permchain; /* the --chmod-filter option */
+
     enum XAttrPolicy {
         XATTR_UNIMPLEMENTED,
         XATTR_READ_ONLY,
@@ -186,7 +188,7 @@ static int bindfs_chown(const char *path, uid_t uid, gid_t gid);
 static int bindfs_truncate(const char *path, off_t size);
 static int bindfs_ftruncate(const char *path, off_t size,
                             struct fuse_file_info *fi);
-static int bindfs_utime(const char *path, struct utimbuf *buf);
+static int bindfs_utimens(const char *path, const struct timespec tv[2]);
 static int bindfs_create(const char *path, mode_t mode, struct fuse_file_info *fi);
 static int bindfs_open(const char *path, struct fuse_file_info *fi);
 static int bindfs_read(const char *path, char *buf, size_t size, off_t offset,
@@ -731,6 +733,7 @@ static int bindfs_chmod(const char *path, mode_t mode)
 
     switch (settings.chmod_policy) {
     case CHMOD_NORMAL:
+        mode = permchain_apply(settings.chmod_permchain, mode);
         if (chmod(path, mode) == -1)
             return -errno;
         return 0;
@@ -835,7 +838,7 @@ static int bindfs_ftruncate(const char *path, off_t size,
     return 0;
 }
 
-static int bindfs_utime(const char *path, struct utimbuf *buf)
+static int bindfs_utimens(const char *path, const struct timespec tv[2])
 {
     int res;
 
@@ -845,7 +848,7 @@ static int bindfs_utime(const char *path, struct utimbuf *buf)
 
     path = process_path(path);
 
-    res = utime(path, buf);
+    res = utimensat(settings.mntsrc_fd, path, tv, AT_SYMLINK_NOFOLLOW);
     if (res == -1)
         return -errno;
 
@@ -1101,7 +1104,7 @@ static struct fuse_operations bindfs_oper = {
     .chown      = bindfs_chown,
     .truncate   = bindfs_truncate,
     .ftruncate  = bindfs_ftruncate,
-    .utime      = bindfs_utime,
+    .utimens    = bindfs_utimens,
     .create     = bindfs_create,
     .open       = bindfs_open,
     .read       = bindfs_read,
@@ -1162,6 +1165,7 @@ static void print_usage(const char *progname)
            "  --chmod-normal            Try to chmod the original files (the default).\n"
            "  --chmod-ignore            Have all chmods fail silently.\n"
            "  --chmod-deny              Have all chmods fail with 'permission denied'.\n"
+           "  --chmod-filter            Change permissions of chmod requests.\n"
            "  --chmod-allow-x           Allow changing file execute bits in any case.\n"
            "\n"
            "Extended attribute policy:\n"
@@ -1520,6 +1524,8 @@ static void atexit_func()
     settings.permchain = NULL;
     permchain_destroy(settings.create_permchain);
     settings.create_permchain = NULL;
+    permchain_destroy(settings.chmod_permchain);
+    settings.chmod_permchain = NULL;
     free(settings.mirrored_users);
     settings.mirrored_users = NULL;
     free(settings.mirrored_members);
@@ -1543,6 +1549,7 @@ int main(int argc, char *argv[])
         char *create_for_user;
         char *create_for_group;
         char *create_with_perms;
+        char *chmod_filter;
         int no_allow_other;
         int multithreaded;
 
@@ -1597,6 +1604,7 @@ int main(int argc, char *argv[])
         OPT2("--chmod-normal", "chmod-normal", OPTKEY_CHMOD_NORMAL),
         OPT2("--chmod-ignore", "chmod-ignore", OPTKEY_CHMOD_IGNORE),
         OPT2("--chmod-deny", "chmod-deny", OPTKEY_CHMOD_DENY),
+        OPT_OFFSET2("--chmod-filter=%s", "chmod-filter=%s", chmod_filter, -1),
         OPT2("--chmod-allow-x", "chmod-allow-x", OPTKEY_CHMOD_ALLOW_X),
         
         OPT2("--xattr-none", "xattr-none", OPTKEY_XATTR_NONE),
@@ -1639,6 +1647,7 @@ int main(int argc, char *argv[])
     settings.chgrp_policy = CHGRP_NORMAL;
     settings.chmod_policy = CHMOD_NORMAL;
     settings.chmod_allow_x = 0;
+    settings.chmod_permchain = permchain_create();
     settings.xattr_policy = XATTR_READ_WRITE;
     settings.mirrored_users_only = 0;
     settings.mirrored_users = NULL;
@@ -1760,6 +1769,12 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+    if (od.chmod_filter) {
+        if (add_chmod_rules_to_permchain(od.chmod_filter, settings.chmod_permchain) != 0) {
+            fprintf(stderr, "Invalid permission specification: '%s'\n", od.chmod_filter);
+            return 1;
+        }
+    }
 
 
     /* Single-threaded mode by default */
@@ -1829,7 +1844,7 @@ int main(int argc, char *argv[])
     /* fuse_main will daemonize by fork()'ing. The signal handler will persist. */
     setup_signal_handling();
 
-    fuse_main_return = fuse_main(args.argc, args.argv, &bindfs_oper);
+    fuse_main_return = fuse_main(args.argc, args.argv, &bindfs_oper, NULL);
 
     fuse_opt_free_args(&args);
     close(settings.mntsrc_fd);

@@ -258,6 +258,14 @@ testenv("--chmod-deny --chmod-allow-x") do
     assert_exception(EPERM) { chmod(0700, 'mnt/dir') } # chmod on dir should not work
 end
 
+testenv("--chmod-filter=g-w,o-rwx") do
+    touch('src/file')
+
+    chmod(0666, 'mnt/file')
+
+    assert { File.stat('src/file').mode & 0777 == 0640 }
+end
+
 root_testenv("--map=nobody/root:@nogroup/@root") do
     touch('src/file')
     chown('nobody', 'nogroup', 'src/file')
@@ -361,6 +369,21 @@ root_testenv("", :title => "setgid directories") do
     assert { File.stat('src/dir/file').gid == $nogroup_gid }
     assert { File.stat('mnt/dir').mode & 07000 == 02000 }
     assert { File.stat('mnt/dir/file').gid == $nogroup_gid }
+end
+
+root_testenv("", :title => "utimens on symlinks") do
+    touch('mnt/file')
+    Dir.chdir "mnt" do
+      system('ln -sf file link')
+    end
+    
+    system("#{$tests_dir}/utimens_nofollow mnt/link 12 34 56 78")
+    raise "Failed to run utimens_nofollow: #{$?.inspect}" unless $?.success?
+    
+    assert { File.lstat('mnt/link').atime.to_i < 100 }
+    assert { File.lstat('mnt/link').mtime.to_i < 100 }
+    assert { File.lstat('mnt/file').atime.to_i > 100 }
+    assert { File.lstat('mnt/file').mtime.to_i > 100 }
 end
 
 # FIXME: this stuff around testenv is a hax, and testenv may also exit(), which defeats the 'ensure' below.
